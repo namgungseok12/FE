@@ -93,7 +93,7 @@ const WordGuessingGame = () => {
         similarity,
         rank,
       };
-      setGameLogs((prev) => [...prev, newLog]);
+      setGameLogs((prev) => [newLog, ...prev]);
 
       // 입력 초기화
       setUserGuess("");
