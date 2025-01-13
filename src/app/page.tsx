@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { BrowserProvider, Contract, parseEther, formatEther } from "ethers";
 import WordGuessingGameAbi from "./abis/WordGuessingGame.json";
 
-const CONTRACT_ADDRESS = "0x8a81920Aa74E1779f604487011be7f45D3Bf327c";
+const CONTRACT_ADDRESS = "0xdc3436926F104C2ED8577fef17a6C41be507Cfe5";
 
 interface GameLog {
   player: string;
@@ -22,7 +22,9 @@ const WordGuessingGame = () => {
   const [gameEnded, setGameEnded] = useState<boolean>(false);
   const [isOwner, setIsOwner] = useState<boolean>(false);
 
-  const BACKEND_API_URL = "http://127.0.0.1:3000/guess"; // 백엔드 API URL
+
+
+  const BACKEND_API_URL = "http://127.0.0.1:3000"; // 백엔드 API URL
 
   // 메타마스크 연결
   const connectWallet = async () => {
@@ -78,15 +80,35 @@ const WordGuessingGame = () => {
       const [pool, ended] = await contract.getGameState();
       setPrizePool(formatEther(pool));
       setGameEnded(ended);
+      console.log("Fetched game state:", { pool, ended });
     } catch (error) {
       console.error("Failed to fetch game state:", error);
     }
   };
 
+  const fetchGameLogs = async () => {
+    try {
+      const response = await fetch(`${BACKEND_API_URL}/logs`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch game logs from backend");
+      }
+      const logs = await response.json();
+      setGameLogs(logs);
+      localStorage.setItem("gameLogs", JSON.stringify(logs));
+    } catch (error) {
+      console.error("Error fetching game logs:", error);
+    }
+  };
+
+
   // 백엔드로 단어 및 지갑 주소 보내기
   const sendGuessToBackend = async () => {
+    console.log("Sending data to backend:", {
+      word: userGuess,
+      walletAddress: walletAddress,
+    }); 
     try {
-      const response = await fetch(BACKEND_API_URL, {
+      const response = await fetch(`${BACKEND_API_URL}/guess`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -105,17 +127,20 @@ const WordGuessingGame = () => {
       console.log("Backend Response:", result);
 
       // 로그 정보 업데이트
-      const similarity = result.similarity || 0; // 백엔드에서 제공하는 유사도 값
-      const proximity = result.proximity || "Unknown"; // 등수 또는 거리 정보
-      setGameLogs((prev) => [
-        {
-          player: walletAddress || "Unknown",
-          guess: userGuess,
-          similarity,
-          proximity,
-        },
-        ...prev,
-      ]);
+      const similarity = result.similarity || 0;
+      const proximity = result.proximity || "far"; 
+
+      const newLog = {
+        player: walletAddress || "Unknown",
+        guess: userGuess,
+        similarity: result.similarity,
+        proximity: result.proximity,
+      };
+      setGameLogs((prevLogs) => {
+        const updatedLogs = [newLog, ...prevLogs];
+        localStorage.setItem("gameLogs", JSON.stringify(updatedLogs));
+        return updatedLogs;
+      });
     } catch (error) {
       console.error("Error sending guess to backend:", error);
       setFeedback("Failed to send guess to backend.");
@@ -128,9 +153,16 @@ const WordGuessingGame = () => {
       setFeedback("Please enter a word.");
       return;
     }
+    const alreadyGuessed = gameLogs.some((log) => log.guess === userGuess);
+    if (alreadyGuessed) {
+      setFeedback(`You have already guessed the word "${userGuess}".`);
+      return;
+    }
+
 
     try {
       const contract = await getContract();
+      console.log(`Submitting ${parseEther("0.001")} ETH for guess:`, userGuess);
       const tx = await contract.guessWord(userGuess, {
         value: parseEther("0.001"),
       });
@@ -150,89 +182,166 @@ const WordGuessingGame = () => {
   };
 
   useEffect(() => {
-    if (walletAddress) {
-      fetchGameState();
+    const savedLogs = localStorage.getItem("gameLogs");
+    if (savedLogs) {
+      setGameLogs(JSON.parse(savedLogs));
     }
+    fetchGameState();
+    fetchGameLogs();
   }, [walletAddress]);
 
   return (
-    <div style={{ backgroundColor: "#f9f9f9", minHeight: "100vh", padding: "20px" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={{ color: "#0070f3" }}>Word Guessing Game</h1>
-        <button
-          onClick={walletAddress ? disconnectWallet : connectWallet}
+    <div
+      style={{
+        backgroundColor: "#0C0C0C", 
+        minHeight: "100vh",
+        padding: "20px",
+        fontFamily: "'Cinzel', serif", 
+        color: "#FFD700",
+      }}
+    >
+      {/* 헤더 */}
+      <header
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "20px",
+          borderBottom: "2px solid #FFD700", 
+          paddingBottom: "10px",
+        }}
+      >
+        <h1 style={{ fontSize: "36px", margin: 0, textShadow: "0 0 10px #FFD700" }}>
+          Word Guessing Game
+        </h1>
+        <div>
+          {!walletAddress ? (
+            <button
+              onClick={connectWallet}
+              style={{
+                padding: "10px 20px",
+                background: "linear-gradient(90deg, #FFD700, #FF4500)", 
+                color: "#fff",
+                border: "none",
+                borderRadius: "10px",
+                cursor: "pointer",
+                fontWeight: "bold",
+                fontSize: "18px", 
+                boxShadow: "0 0 10px #FF4500",
+              }}
+            >
+              Connect Wallet
+            </button>
+          ) : (
+            <button
+              onClick={disconnectWallet}
+              style={{
+                padding: "10px 20px",
+                background: "linear-gradient(90deg, #FF4500, #FF6347)",
+                color: "#fff",
+                border: "none",
+                borderRadius: "10px",
+                cursor: "pointer",
+                fontWeight: "bold",
+                fontSize: "18px", 
+                boxShadow: "0 0 10px #FF4500",
+              }}
+            >
+              Disconnect Wallet
+            </button>
+          )}
+        </div>
+      </header>
+  
+      {/* 상금 풀 */}
+      <div style={{ textAlign: "center", marginBottom: "20px" }}>
+        <h2
           style={{
-            padding: "10px 20px",
-            backgroundColor: walletAddress ? "#dc3545" : "#0070f3",
-            color: "#fff",
-            border: "none",
-            borderRadius: "5px",
-            cursor: "pointer",
+            fontSize: "40px",
+            color: "#FFD700",
+            textShadow: "0 0 15px #FFD700",
           }}
         >
-          {walletAddress ? "Disconnect Wallet" : "Connect Wallet"}
-        </button>
-      </header>
-
-      <div style={{ textAlign: "center", marginTop: "20px" }}>
-        <h2 style={{ color: "#28a745" }}>Prize Pool: {prizePool} ETH</h2>
-        {isOwner && (
-          <button
-            onClick={() => alert("New game feature not implemented in this code!")}
-            style={{
-              padding: "10px 20px",
-              marginTop: "10px",
-              backgroundColor: "#0070f3",
-              color: "#fff",
-              border: "none",
-              borderRadius: "5px",
-              cursor: "pointer",
-            }}
-          >
-            Start New Game
-          </button>
-        )}
+          Prize Pool: {prizePool} ETH
+        </h2>
       </div>
-
-      <div style={{ textAlign: "center", marginTop: "20px" }}>
+  
+      {/* 단어 추측 입력 */}
+      <div style={{ textAlign: "center" }}>
         <input
           type="text"
           value={userGuess}
           onChange={(e) => setUserGuess(e.target.value)}
           placeholder="Enter your guess"
           style={{
-            padding: "10px",
+            padding: "15px",
             fontSize: "16px",
             width: "50%",
-            borderRadius: "5px",
-            border: "1px solid #ddd",
+            border: "2px solid #FFD700", 
+            borderRadius: "10px",
+            backgroundColor: "#1A1A2E",
+            color: "#FFD700",
             marginBottom: "10px",
+            outline: "none", 
           }}
+          onFocus={(e) => (e.target.style.border = "2px solid #FFD700")} // 포커스 시 테두리 흰색으로 변경 -> 취소(구림)
+          onBlur={(e) => (e.target.style.border = "2px solid #FFD700")} // 포커스 해제 시 금색으로 복구
         />
+        <br />
         <button
           onClick={handleSubmitGuess}
           style={{
-            padding: "10px 20px",
-            backgroundColor: "#0070f3",
+            padding: "10px 25px",
+            background: "linear-gradient(90deg, #FFD700, #FF4500)",
             color: "#fff",
             border: "none",
-            borderRadius: "5px",
+            borderRadius: "10px",
             cursor: "pointer",
+            fontWeight: "bold",
+            fontSize: "18px", 
+            boxShadow: "0 0 10px #FFD700",
           }}
         >
           Submit Guess
         </button>
       </div>
-
-      {feedback && <p style={{ textAlign: "center", marginTop: "10px" }}>{feedback}</p>}
-
+  
+      {/* 피드백 메시지 */}
+      {feedback && (
+        <p
+          style={{
+            textAlign: "center",
+            marginTop: "10px",
+            color: "#FF4500",
+            fontWeight: "bold",
+            textShadow: "0 0 5px #FF6347",
+          }}
+        >
+          {feedback}
+        </p>
+      )}
+  
+      {/* 게임 로그 */}
       <div style={{ marginTop: "30px" }}>
-        <h3>Game Logs</h3>
-        <ul>
+        <h3 style={{ color: "#FFD700", textShadow: "0 0 10px #FFD700" }}>
+          Game Logs
+        </h3>
+        <ul style={{ listStyle: "none", padding: 0 }}>
           {gameLogs.map((log, idx) => (
-            <li key={idx}>
-              <strong>Player:</strong> {log.player} | <strong>Guess:</strong> {log.guess} |{" "}
-              <strong>Similarity:</strong> {log.similarity}% |{" "}
+            <li
+              key={idx}
+              style={{
+                backgroundColor: "#1A1A2E",
+                color: "#FFD700",
+                marginBottom: "10px",
+                padding: "15px",
+                borderRadius: "10px",
+                boxShadow: "0 0 10px #FFD700",
+                border: "1px solid #FFD700",
+              }}
+            >
+              <strong>Player:</strong> {log.player} | <strong>Guess:</strong>{" "}
+              {log.guess} | <strong>Similarity:</strong> {log.similarity}% |{" "}
               <strong>Proximity:</strong> {log.proximity}
             </li>
           ))}
@@ -240,6 +349,6 @@ const WordGuessingGame = () => {
       </div>
     </div>
   );
+  
 };
-
 export default WordGuessingGame;
