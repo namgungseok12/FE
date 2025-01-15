@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { groth16 } from "snarkjs";
 import { BrowserProvider, Contract, parseEther, formatEther } from "ethers";
 import WordGuessingGameAbi from "./abis/WordGuessingGame.json";
 
-const CONTRACT_ADDRESS = "0xdc3436926F104C2ED8577fef17a6C41be507Cfe5";
-
+//gamelog interface
 interface GameLog {
   player: string;
   guess: string;
@@ -13,20 +13,30 @@ interface GameLog {
   proximity: string;
 }
 
-const WordGuessingGame = () => {
+const BACKEND_API_URL = "http://127.0.0.1:3000";
+const CONTRACT_ADDRESS = "0x041E42De0b65D57459FB1fB51438bEc6ca766e6c";
+
+//zk
+function toAsciiArray20(str: string): number[] {
+  const arr = new Array(20).fill(0);
+  for (let i = 0; i < 20; i++) {
+    arr[i] = str.charCodeAt(i) || 0;
+  }
+  return arr;
+}
+
+export default function WordGuessingGamePage() {
+
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [userGuess, setUserGuess] = useState<string>("");
-  const [gameLogs, setGameLogs] = useState<GameLog[]>([]);
-  const [feedback, setFeedback] = useState<string | null>(null);
   const [prizePool, setPrizePool] = useState<string>("0");
   const [gameEnded, setGameEnded] = useState<boolean>(false);
-  const [isOwner, setIsOwner] = useState<boolean>(false);
+  const [userGuess, setUserGuess] = useState<string>("");
+  const [guess, setGuess] = useState<string>("");
+  const [gameLogs, setGameLogs] = useState<GameLog[]>([]);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
 
-
-  const BACKEND_API_URL = "http://127.0.0.1:3000"; // 백엔드 API URL
-
-  // 메타마스크 연결
+//connect wallet
   const connectWallet = async () => {
     try {
       if (!window.ethereum) {
@@ -37,7 +47,6 @@ const WordGuessingGame = () => {
       const accounts = await provider.send("eth_requestAccounts", []);
       if (accounts.length > 0) {
         setWalletAddress(accounts[0]);
-        checkIfOwner(accounts[0]);
         setFeedback(`Connected to wallet: ${accounts[0]}`);
       }
     } catch (error) {
@@ -46,13 +55,13 @@ const WordGuessingGame = () => {
     }
   };
 
-  // 지갑 연결 해제
+  //disconnect wallet
   const disconnectWallet = () => {
     setWalletAddress(null);
     setFeedback("Wallet disconnected.");
   };
 
-  // 컨트랙트 인스턴스 가져오기
+  //contract import
   const getContract = async (): Promise<Contract> => {
     if (!window.ethereum) {
       throw new Error("No crypto wallet found");
@@ -62,33 +71,23 @@ const WordGuessingGame = () => {
     return new Contract(CONTRACT_ADDRESS, WordGuessingGameAbi, signer);
   };
 
-  // 현재 연결된 계정이 Owner인지 확인
-  const checkIfOwner = async (account: string) => {
-    try {
-      const contract = await getContract();
-      const owner = await contract.owner();
-      setIsOwner(owner.toLowerCase() === account.toLowerCase());
-    } catch (error) {
-      console.error("Failed to check owner:", error);
-    }
-  };
 
-  // 상금 풀 및 게임 상태 가져오기
+  //fetching game state(pool, ended)
   const fetchGameState = async () => {
     try {
       const contract = await getContract();
       const [pool, ended] = await contract.getGameState();
       setPrizePool(formatEther(pool));
       setGameEnded(ended);
-      console.log("Fetched game state:", { pool, ended });
     } catch (error) {
       console.error("Failed to fetch game state:", error);
     }
   };
 
+  //fetching game logs
   const fetchGameLogs = async () => {
     try {
-      const response = await fetch(`${BACKEND_API_URL}/logs`);
+      const response = await fetch(`${BACKEND_API_URL}/logs?cursor=0&pageSize=100`);
       if (!response.ok) {
         throw new Error("Failed to fetch game logs from backend");
       }
@@ -101,20 +100,49 @@ const WordGuessingGame = () => {
   };
 
 
-  // 백엔드로 단어 및 지갑 주소 보내기
-  const sendGuessToBackend = async () => {
-    console.log("Sending data to backend:", {
-      word: userGuess,
-      walletAddress: walletAddress,
-    }); 
+  const handleSubmitGuess = async () => {
+    if (!walletAddress) {
+      setFeedback("You must connect your wallet.");
+      return;
+    }
+    if (!userGuess) {
+      setFeedback("Please enter a word.");
+      return;
+    }
+    //alreadyguessed
+    const alreadyGuessed = gameLogs.some((log) => log.guess === userGuess);
+    if (alreadyGuessed) {
+      setFeedback(`You have already guessed the word "${userGuess}".`);
+      return;
+    }
     try {
+      const contract = await getContract();
+      const tx = await contract.guessWord({
+        value: parseEther("0.001"),
+      }); 
+      setFeedback(`Your guess "${userGuess}" has been submitted.`);
+      await sendGuessToBackend(userGuess);
+      await fetchGameLogs();
+      
+
+    } catch (error) {
+      console.error("Failed to submit guess:", error);
+      setFeedback("Failed to submit your guess.");
+    }
+  };
+
+  //post guess,walletAddress
+  const sendGuessToBackend = async (guessWord: string) => {
+    if (!walletAddress) return;
+    try {
+      console.log("backend:", { word: guessWord, walletAddress });
       const response = await fetch(`${BACKEND_API_URL}/guess`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          word: userGuess,
+          word: guessWord,
           walletAddress: walletAddress,
         }),
       });
@@ -125,17 +153,17 @@ const WordGuessingGame = () => {
 
       const result = await response.json();
       console.log("Backend Response:", result);
-
-      // 로그 정보 업데이트
-      const similarity = result.similarity || 0;
-      const proximity = result.proximity || "far"; 
-
+      if(result.similarity == 1){
+        setFeedback(`Congratulations! Player ${walletAddress} has won the prize!`);
+      }
+      //log update
       const newLog = {
-        player: walletAddress || "Unknown",
-        guess: userGuess,
-        similarity: result.similarity,
-        proximity: result.proximity,
+        player: walletAddress,
+        guess: guessWord,
+        similarity: result.similarity || 0,
+        proximity: result.proximity || "far",
       };
+      
       setGameLogs((prevLogs) => {
         const updatedLogs = [newLog, ...prevLogs];
         localStorage.setItem("gameLogs", JSON.stringify(updatedLogs));
@@ -147,48 +175,22 @@ const WordGuessingGame = () => {
     }
   };
 
-  // 단어 추측 제출
-  const handleSubmitGuess = async () => {
-    if (!userGuess) {
-      setFeedback("Please enter a word.");
-      return;
-    }
-    const alreadyGuessed = gameLogs.some((log) => log.guess === userGuess);
-    if (alreadyGuessed) {
-      setFeedback(`You have already guessed the word "${userGuess}".`);
-      return;
-    }
 
 
-    try {
-      const contract = await getContract();
-      console.log(`Submitting ${parseEther("0.001")} ETH for guess:`, userGuess);
-      const tx = await contract.guessWord(userGuess, {
-        value: parseEther("0.001"),
-      });
-      await tx.wait();
-
-      setFeedback(`Your guess "${userGuess}" has been submitted.`);
-
-      // 백엔드로 데이터 전송
-      await sendGuessToBackend();
-
-      // 게임 상태 갱신
-      fetchGameState();
-    } catch (error) {
-      console.error("Failed to submit guess:", error);
-      setFeedback("Failed to submit your guess.");
-    }
-  };
 
   useEffect(() => {
-    const savedLogs = localStorage.getItem("gameLogs");
-    if (savedLogs) {
-      setGameLogs(JSON.parse(savedLogs));
-    }
-    fetchGameState();
-    fetchGameLogs();
-  }, [walletAddress]);
+    const interval = setInterval(async () => {
+      try {
+        await fetchGameState();
+        await fetchGameLogs();
+      } catch (error) {
+        console.error("Error updating game data:", error);
+      }
+    }, 0.001); 
+  
+    return () => clearInterval(interval);
+  }, [gameEnded, walletAddress]);
+  
 
   return (
     <div
@@ -252,8 +254,19 @@ const WordGuessingGame = () => {
           )}
         </div>
       </header>
-  
-      {/* 상금 풀 */}
+
+      <div style={{ textAlign: "center", marginBottom: "20px" }}>
+        <h2
+          style={{
+            fontSize: "28px",
+            color: gameEnded ? "#FF4500" : "#00FF00",
+            textShadow: "0 0 10px #FFD700",
+          }}
+        >
+          {gameEnded ? "Game Over" : "Game in Progress"}
+        </h2>
+      </div>
+
       <div style={{ textAlign: "center", marginBottom: "20px" }}>
         <h2
           style={{
@@ -266,7 +279,7 @@ const WordGuessingGame = () => {
         </h2>
       </div>
   
-      {/* 단어 추측 입력 */}
+
       <div style={{ textAlign: "center" }}>
         <input
           type="text"
@@ -292,7 +305,9 @@ const WordGuessingGame = () => {
           onClick={handleSubmitGuess}
           style={{
             padding: "10px 25px",
-            background: "linear-gradient(90deg, #FFD700, #FF4500)",
+            background: walletAddress
+            ? "linear-gradient(90deg, #FFD700, #FF4500)"
+            : "#555555", // 지갑 미연결 시 회색
             color: "#fff",
             border: "none",
             borderRadius: "10px",
@@ -341,8 +356,8 @@ const WordGuessingGame = () => {
               }}
             >
               <strong>Player:</strong> {log.player} | <strong>Guess:</strong>{" "}
-              {log.guess} | <strong>Similarity:</strong> {log.similarity}% |{" "}
-              <strong>Proximity:</strong> {log.proximity}
+              {log.guess} | <strong>Similarity:</strong> {log.similarity} |{" "}
+              <strong>Proximity:</strong>{isNaN(Number(log.proximity)) ? log.proximity : `${log.proximity}/1000`}
             </li>
           ))}
         </ul>
@@ -351,4 +366,3 @@ const WordGuessingGame = () => {
   );
   
 };
-export default WordGuessingGame;

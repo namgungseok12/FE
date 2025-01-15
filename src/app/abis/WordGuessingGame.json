@@ -5,48 +5,24 @@
         "type": "constructor"
     },
     {
-        "anonymous": false,
-        "inputs": [
+        "inputs": [],
+        "name": "changeStatus",
+        "outputs": [
             {
-                "indexed": true,
-                "internalType": "address",
-                "name": "owner",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "bytes32",
-                "name": "newAnswerHash",
-                "type": "bytes32"
-            }
-        ],
-        "name": "GameRestarted",
-        "type": "event"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": true,
-                "internalType": "address",
-                "name": "player",
-                "type": "address"
-            },
-            {
-                "indexed": false,
-                "internalType": "string",
-                "name": "guess",
-                "type": "string"
-            },
-            {
-                "indexed": false,
                 "internalType": "bool",
-                "name": "isCorrect",
+                "name": "",
                 "type": "bool"
             }
         ],
-        "name": "WordGuessed",
-        "type": "event"
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "endGame",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
     },
     {
         "inputs": [],
@@ -80,16 +56,23 @@
         "type": "function"
     },
     {
-        "inputs": [
-            {
-                "internalType": "string",
-                "name": "guessedWord",
-                "type": "string"
-            }
-        ],
+        "inputs": [],
         "name": "guessWord",
         "outputs": [],
         "stateMutability": "payable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "isAnswer",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
         "type": "function"
     },
     {
@@ -119,21 +102,8 @@
         "type": "function"
     },
     {
-        "inputs": [
-            {
-                "internalType": "string",
-                "name": "newAnswer",
-                "type": "string"
-            }
-        ],
-        "name": "setAnswer",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
         "inputs": [],
-        "name": "withdrawAll",
+        "name": "restartGame",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
